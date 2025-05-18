@@ -22,7 +22,7 @@ Docker Compose ( not used while building the project)
 bash
 Copy
 Edit
-<pre> git clone https://github.com/your-username/your-repo.git  
+<pre> git clone https://github.com/umutxcan/WebDbProject.git  
  cd your-repo </pre> 
 2. Customize Configuration Files
 Edit files like docker-compose.yml, app.py, or Dockerfile if needed, to fit your app or environment.
