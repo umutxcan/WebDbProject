@@ -46,7 +46,7 @@ Once the containers are running, you can access the web app by visiting:
 arduino
 Copy
 Edit
- <pre> http://localhost:5000  </pre>    
+ <pre> http://localhost:8000/users  </pre>    
 Or:
 
 pgsql
