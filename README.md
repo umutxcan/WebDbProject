@@ -32,7 +32,7 @@ Edit files like docker-compose.yml, app.py, or Dockerfile if needed, to fit your
 bash
 Copy
 Edit
-<pre> docker build -t python-web-app . </pre>  
+<pre> docker build -t myapp4-image . </pre>  
 5. Start the Services
 Use Docker Compose to spin up both the app and the database:
 
