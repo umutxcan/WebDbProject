@@ -21,7 +21,7 @@ pipeline {
           -v /kaniko/.docker:/kaniko/.docker \
           -e DOCKER_CONFIG=/kaniko/.docker \
           gcr.io/kaniko-project/executor:latest \
-          --dockerfile=Dockerfile \
+          --dockerfile=/workspace/Dockerfile \
           --context=dir:///workspace \
           --destination=$IMAGE_NAME \
           --skip-tls-verify
