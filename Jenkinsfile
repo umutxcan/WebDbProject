@@ -2,7 +2,7 @@ pipeline {
   agent any
 
   environment {
-    IMAGE_NAME = "harbor.vmind.net/myproject/myapp:latest"
+    IMAGE_NAME = "harbor.umutcan.info/myproject/myapp:latest"
     HARBOR_CREDS = credentials('harbor-credentials')  // Jenkins'te tanımlı
   }
 
