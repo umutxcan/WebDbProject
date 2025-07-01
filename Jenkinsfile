@@ -39,7 +39,7 @@ pipeline {
         docker service update --image $IMAGE_NAME myapp
       else
         echo "myapp servisi yok, oluşturuluyor..."
-        docker service create --name myapp --replicas 3 -p 5000:5000 $IMAGE_NAME
+        docker service create --name myapp --network my_overlay  --replicas 3 -p 5000:5000 $IMAGE_NAME
       fi
 ENDSSH
     """
