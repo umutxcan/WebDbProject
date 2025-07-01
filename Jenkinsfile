@@ -30,20 +30,20 @@ pipeline {
     }
 
     stage('Deploy to Swarm') {
-      steps {
-        sh """
-        ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ubuntu@43.229.92.46 << 'ENDSSH'
-          docker service ls | grep myapp > /dev/null
-          if [ \$? -eq 0 ]; then
-            echo "myapp servisi mevcut, update ediliyor..."
-            docker service update --image $IMAGE_NAME myapp
-          else
-            echo "myapp servisi yok, oluşturuluyor..."
-            docker service create --name myapp --replicas 3 -p 5000:5000 $IMAGE_NAME
-          fi
-        ENDSSH
-        """
-      }
-    }
+  steps {
+    sh """
+    ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ubuntu@43.229.92.46 << 'ENDSSH'
+      docker service ls | grep myapp > /dev/null
+      if [ \$? -eq 0 ]; then
+        echo "myapp servisi mevcut, update ediliyor..."
+        docker service update --image $IMAGE_NAME myapp
+      else
+        echo "myapp servisi yok, oluşturuluyor..."
+        docker service create --name myapp --replicas 3 -p 5000:5000 $IMAGE_NAME
+      fi
+ENDSSH
+    """
+  }
+}
   }
 }
