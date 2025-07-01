@@ -17,6 +17,7 @@ pipeline {
       steps {
         sh '''
         docker run --rm \
+          --dns=8.8.8.8 \             
           -v $(pwd):/workspace \
           -v /kaniko/.docker:/kaniko/.docker \
           -e DOCKER_CONFIG=/kaniko/.docker \
