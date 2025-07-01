@@ -14,21 +14,20 @@ pipeline {
     }
 
     stage('Build Image with Kaniko') {
-      steps {
-        sh '''
-        docker run --rm \
-          --dns=8.8.8.8 \                        
-          -v $(pwd):/workspace \
-          -v /kaniko/.docker:/kaniko/.docker \
-          -e DOCKER_CONFIG=/kaniko/.docker \
-          gcr.io/kaniko-project/executor:latest \
-          --dockerfile=Dockerfile.dtb \
-          --context=dir:///workspace \
-          --destination=$IMAGE_NAME \
-          --skip-tls-verify
-        '''
-      }
-    }
+  steps {
+    sh """
+    docker run --rm --dns=8.8.8.8 \
+      -v \$(pwd):/workspace \
+      -v /kaniko/.docker:/kaniko/.docker \
+      -e DOCKER_CONFIG=/kaniko/.docker \
+      gcr.io/kaniko-project/executor:latest \
+      --dockerfile=Dockerfile.dtb \
+      --context=dir:///workspace \
+      --destination=$IMAGE_NAME \
+      --skip-tls-verify
+    """
+  }
+}
 
     stage('Deploy to Swarm') {
       steps {
