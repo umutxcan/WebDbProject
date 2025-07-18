@@ -1,4 +1,4 @@
-FROM harbor.umutcan.info/myproject/python-base:3.9-slim
+FROM harbor.umutcan.info/myproject/python-base:3.11-slim
 ENV keyvalue=1
 WORKDIR /app
 COPY requirements.txt /app/
