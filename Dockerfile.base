@@ -1,6 +1,6 @@
 FROM python:3.11-slim 
 RUN apt-get update && apt-get install -y \
     libpq-dev gcc && \
-    pip install Flask==2.1.1 SQLAlchemy==1.4.27 psycopg2==2.9.1 \ 
+    pip install Flask==2.1.1 SQLAlchemy==1.4.27 psycopg2-binary==2.9.1 \ 
     gunicorn==20.1.0 Werkzeug==2.0.3 flask_sqlalchemy==2.5.1 && \
     rm -rf /var/lib/apt/lists/*
