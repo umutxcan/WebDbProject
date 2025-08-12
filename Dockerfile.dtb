@@ -1,9 +1,17 @@
-FROM harbor.umutcan.info/myproject/python-base:3.11-slim
-ENV keyvalue=1
+FROM harbor.umutcan.info/myproject/python-base:3.11
+
+
+RUN apt-get update && \
+    apt-get install -y gcc build-essential libpq-dev libpq5 && \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
-COPY requirements.txt /app/
- 
-COPY . /app/   
-EXPOSE 5000
+
+COPY requirements.txt .
+RUN pip uninstall -y psycopg2-binary psycopg2 || true && \
+    pip install --no-cache-dir -r requirements.txt
+
+COPY app.py .
+
 CMD ["python", "app.py"]
 

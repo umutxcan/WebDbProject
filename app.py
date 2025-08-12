@@ -1,21 +1,40 @@
-#eskisi not.txtde
 from flask import Flask, jsonify
 from flask_sqlalchemy import SQLAlchemy
+import os
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://myuser:mypassword@myapp-db/mydatabase'
+
+# PostgreSQL bağlantı ayarları (env'den alınır)
+DB_USER = os.getenv("POSTGRES_USER", "myuser")
+DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "mypassword")
+DB_NAME = os.getenv("POSTGRES_DB", "mydatabase")
+DB_HOST = os.getenv("DB_HOST", "myapp-db")
+DB_PORT = os.getenv("DB_PORT", "5432")
+
+app.config['SQLALCHEMY_DATABASE_URI'] = f'postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
 db = SQLAlchemy(app)
 
 class User(db.Model):
-    __tablename__ = 'users4'  #sonradan eklendi calıstı dokunma sakın
+    __tablename__ = 'users4'
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(50))
-    email = db.Column(db.String(100))
+    username = db.Column(db.String(50), nullable=False)
+    email = db.Column(db.String(100), nullable=False)
 
-@app.route('/users')
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "username": self.username,
+            "email": self.email
+        }
+
+@app.route('/users', methods=['GET'])
 def get_users():
     users = User.query.all()
-    return jsonify([{'username': u.username, 'email': u.email} for u in users])
+    return jsonify([user.to_dict() for user in users])
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+if __name__ == '__main__':
+    with app.app_context():
+        db.create_all()
+    app.run(host='0.0.0.0', port=5000, debug=True)

@@ -1,0 +1,18 @@
+# Sırlar / lokal dosyalar
+*.pem
+*.ovpn
+*.list
+.env
+.env.*
+
+# Lokal konfig
+haproxy.cfg
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# VS Code
+.vscode/
