@@ -34,6 +34,13 @@ def get_users():
     users = User.query.all()
     return jsonify([user.to_dict() for user in users])
 
+@app.route('/kubilay', methods=['GET'])
+def get_users():
+    users = User.query.all()
+    return ("kubilay kaptanoglu")
+
+
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
