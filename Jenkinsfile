@@ -10,7 +10,7 @@ pipeline {
     string(name: 'IMAGE_TAG',   defaultValue: 'latest',              description: 'Image tag (örn. v1.0.1)')
 
     // ---- Build ----
-    string(name: 'DOCKERFILE_PATH', defaultValue: 'docker/Dockerfile.app', description: 'Dockerfile path')
+    string(name: 'DOCKERFILE_PATH', defaultValue: 'Dockerfile.dtb', description: 'Dockerfile path')
     booleanParam(name: 'USE_BASE',  defaultValue: false, description: 'BASE_IMAGE=harbor.../python-base:3.11 kullan')
     string(name: 'CREDS_ID', defaultValue: 'harbor-creds', description: 'Harbor creds (Username+Password/robot)')
 
