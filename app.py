@@ -35,9 +35,8 @@ def get_users():
     return jsonify([user.to_dict() for user in users])
 
 @app.route('/kubilay', methods=['GET'])
-def get_users():
-    users = User.query.all()
-    return ("kubilay kaptanoglu")
+def get_kubilay():   # buradaki isim değişti
+    return "kubilay kaptanoglu"
 
 
 

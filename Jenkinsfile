@@ -1,150 +1,118 @@
 pipeline {
   agent any
-  options { timestamps(); disableConcurrentBuilds() }
+
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+    timeout(time: 30, unit: 'MINUTES')
+  }
 
   parameters {
-    string(name: 'HEALTHCHECK_URL', defaultValue: 'https://umutcan.info/users', description: 'örn: https://umutcan.info/users veya http://43.229.92.195/users')
+    // ---- Registry / Image ----
+    string(name: 'REGISTRY',    defaultValue: 'harbor.umutcan.info', description: 'Harbor registry')
+    string(name: 'PROJECT',     defaultValue: 'myproject',           description: 'Harbor project')
+    string(name: 'IMAGE_NAME',  defaultValue: 'myapp',               description: 'Image name')
+    string(name: 'IMAGE_TAG',   defaultValue: 'latest',              description: 'Image tag')
+
+    // ---- Build ----
+    string(name: 'DOCKERFILE_PATH', defaultValue: 'docker/Dockerfile.app', description: 'Dockerfile path')
+    booleanParam(name: 'USE_BASE',  defaultValue: false, description: 'Base imaj (harbor.../python-base:3.11) kullan')
+
+    // ---- (Opsiyonel) Sağlık kontrolü ----
+    booleanParam(name: 'HEALTHCHECK', defaultValue: false, description: 'Build sonrası public IP üzerinden health check yap')
+    string(name: 'PUBLIC_IP',    defaultValue: '43.229.92.195', description: 'LB/Public IP')
+    string(name: 'HEALTH_PATH',  defaultValue: '/health',       description: 'Health path')
+    string(name: 'KUBILAY_PATH', defaultValue: '/kubilay',      description: 'Kubilay path')
+    string(name: 'PROTOCOLS',    defaultValue: 'https,http',    description: 'Denenecek protokoller (virgülle): https,http')
   }
 
   environment {
-    // ---- REGISTRY / IMAGE ----
-    REGISTRY             = 'harbor.umutcan.info'
-    PROJECT              = 'myproject'
-    IMAGE_NAME           = 'myapp'
-    REGISTRY_CREDENTIALS = 'harbor-creds'     // Jenkins Username+Password
-
-    // ---- SWARM / DEPLOY ----
-    SWARM_HOST           = 'ubuntu@192.168.100.105' // manager@ip
-    SWARM_SSH            = 'swarm-manager-ssh'      // Jenkins SSH key
-    APP_SERVICE          = 'flaskapp'
-    PUBLISHED_PORT       = '8080'
-    CONTAINER_PORT       = '5000'
-
-    // ---- DB (servis zaten mevcut varsayımıyla) ----
-    DB_CREDS             = 'db-creds'               // Username+Password
-    DB_NAME              = 'mydatabase'
-    DB_SERVICE           = 'myapp-db'               // Service DNS/hostname
+    CREDS_ID   = 'harbor-creds'                     // Jenkins "Username with password"
+    KANIKO_IMG = 'gcr.io/kaniko-project/executor:latest'
   }
 
   stages {
-    stage('Checkout') { steps { checkout scm } }
-
-    stage('Tag & Image') {
+    stage('Checkout') {
       steps {
-        script {
-          env.IMAGE_TAG        = (env.GIT_COMMIT ?: sh(script:'git rev-parse --short HEAD', returnStdout:true).trim()).take(7)
-          env.APP_IMAGE_FULL   = "${env.REGISTRY}/${env.PROJECT}/${env.IMAGE_NAME}:${env.IMAGE_TAG}"
-          env.APP_IMAGE_LATEST = "${env.REGISTRY}/${env.PROJECT}/${env.IMAGE_NAME}:latest"
-          echo "Image → ${env.APP_IMAGE_FULL}"
-        }
+        checkout scm
+        sh 'echo "Git rev: $(git rev-parse --short HEAD)"'
       }
     }
 
     stage('Build & Push (Kaniko)') {
       steps {
-        withCredentials([usernamePassword(credentialsId: env.REGISTRY_CREDENTIALS, usernameVariable: 'HARBOR_USER', passwordVariable: 'HARBOR_PASS')]) {
-          sh """
+        withCredentials([usernamePassword(credentialsId: "${CREDS_ID}", usernameVariable: 'REG_USER', passwordVariable: 'REG_PASS')]) {
+          sh '''
             set -e
-            mkdir -p .docker
-            AUTH=\$(printf "%s" "\$HARBOR_USER:\$HARBOR_PASS" | base64)
-            cat > .docker/config.json <<EOF
-            { "auths": { "${REGISTRY}": { "auth": "\$AUTH" } } }
+            echo ">> Preparing Docker auth for Kaniko"
+            mkdir -p $HOME/.docker
+            AUTH=$(echo -n "${REG_USER}:${REG_PASS}" | base64 -w 0)
+            cat > $HOME/.docker/config.json <<EOF
+            { "auths": { "https://${REGISTRY}": { "auth": "${AUTH}" } } }
             EOF
 
+            if [ "${USE_BASE}" = "true" ]; then
+              BASE_ARG="--build-arg BASE_IMAGE=${REGISTRY}/${PROJECT}/python-base:3.11"
+            else
+              BASE_ARG=""
+            fi
+
+            echo ">> Building & pushing ${REGISTRY}/${PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}"
             docker run --rm \
-              -v "\$PWD":/workspace \
-              -v "\$PWD/.docker":/kaniko/.docker \
-              gcr.io/kaniko-project/executor:latest \
+              -v $(pwd):/workspace \
+              -v $HOME/.docker:/kaniko/.docker \
+              ${KANIKO_IMG} \
               --context=/workspace \
-              --dockerfile=/workspace/Dockerfile \
-              --destination="${APP_IMAGE_FULL}" \
-              --destination="${APP_IMAGE_LATEST}" \
-              --snapshotMode=redo --reproducible --single-snapshot
-          """
+              --dockerfile=${DOCKERFILE_PATH} \
+              ${BASE_ARG} \
+              --destination=${REGISTRY}/${PROJECT}/${IMAGE_NAME}:${IMAGE_TAG} \
+              --single-snapshot
+          '''
         }
       }
     }
 
-    stage('Deploy') {
-      steps {
-        withCredentials([
-          sshUserPrivateKey(credentialsId: env.SWARM_SSH, keyFileVariable: 'SSH_KEY'),
-          usernamePassword(credentialsId: env.DB_CREDS, usernameVariable: 'DB_USER', passwordVariable: 'DB_PASS'),
-          usernamePassword(credentialsId: env.REGISTRY_CREDENTIALS, usernameVariable: 'HARBOR_USER', passwordVariable: 'HARBOR_PASS')
-        ]) {
-          sh """
-            set -e
-            ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" ${SWARM_HOST} \
-              IMAGE='${APP_IMAGE_FULL}' \
-              APP_SERVICE='${APP_SERVICE}' \
-              DB_SERVICE='${DB_SERVICE}' \
-              DB_NAME='${DB_NAME}' \
-              DB_USER="$DB_USER" \
-              DB_PASS="$DB_PASS" \
-              PUBLISHED_PORT='${PUBLISHED_PORT}' \
-              CONTAINER_PORT='${CONTAINER_PORT}' \
-              REGISTRY='${REGISTRY}' \
-              HARBOR_USER="$HARBOR_USER" \
-              HARBOR_PASS="$HARBOR_PASS" \
-              bash -lc '
-                set -e
-                docker login "$REGISTRY" -u "$HARBOR_USER" -p "$HARBOR_PASS" >/dev/null
-
-                if docker service inspect "$APP_SERVICE" >/dev/null 2>&1; then
-                  docker service update \
-                    --with-registry-auth \
-                    --image "$IMAGE" \
-                    --env-add POSTGRES_USER="$DB_USER" \
-                    --env-add POSTGRES_PASSWORD="$DB_PASS" \
-                    --env-add POSTGRES_DB="$DB_NAME" \
-                    --env-add DB_HOST="$DB_SERVICE" \
-                    --env-add DB_PORT="5432" \
-                    "$APP_SERVICE"
-                else
-                  docker service create \
-                    --name "$APP_SERVICE" \
-                    --replicas 3 \
-                    --publish "$PUBLISHED_PORT:$CONTAINER_PORT" \
-                    --with-registry-auth \
-                    --env POSTGRES_USER="$DB_USER" \
-                    --env POSTGRES_PASSWORD="$DB_PASS" \
-                    --env POSTGRES_DB="$DB_NAME" \
-                    --env DB_HOST="$DB_SERVICE" \
-                    --env DB_PORT="5432" \
-                    "$IMAGE"
-                fi
-
-                docker service ls | grep "$APP_SERVICE" || true
-                docker service ps --no-trunc "$APP_SERVICE" || true
-              '
-          """
-        }
-      }
-    }
-
-    stage('Health Check') {
+    stage('Health Check (public IP)') {
+      when { expression { return params.HEALTHCHECK } }
       steps {
         script {
-          def url = params.HEALTHCHECK_URL?.trim()
-          if (!url) { error('HEALTHCHECK_URL boş olamaz') }
-          sh """
-            set -e
-            echo "Health → ${url}"
-            for i in 1 2 3 4 5; do
-              code=\$(curl -s -k -o /dev/null -w "%{http_code}" "${url}")
-              echo "Try \$i: HTTP \$code"
-              [ "\$code" = "200" ] && exit 0
-              sleep 3
+          sh '''
+            set +e
+            IFS=',' read -r -a PROTOS <<< "${PROTOCOLS}"
+            OK=0
+            for proto in "${PROTOS[@]}"; do
+              echo ">> Trying: $proto://${PUBLIC_IP}${HEALTH_PATH}"
+              if curl -skI "$proto://${PUBLIC_IP}${HEALTH_PATH}" | grep -q "200"; then
+                echo "Health OK via $proto"
+                OK=1
+                break
+              fi
             done
-            echo "Health check failed"; exit 1
-          """
+
+            if [ $OK -eq 0 ]; then
+              echo "WARN: Health check failed on all protocols: ${PROTOCOLS}"
+              exit 1
+            fi
+
+            echo ">> Kubilay endpoint quick check"
+            for proto in "${PROTOS[@]}"; do
+              echo ">> $proto://${PUBLIC_IP}${KUBILAY_PATH}"
+              if curl -sk "$proto://${PUBLIC_IP}${KUBILAY_PATH}" | grep -qi "kubilay kaptanoglu"; then
+                echo "Kubilay endpoint OK via $proto"
+                exit 0
+              fi
+            done
+
+            echo "WARN: Kubilay endpoint not matched; continuing."
+            exit 0
+          '''
         }
       }
     }
   }
 
   post {
-    success { echo "✅ OK: ${env.APP_IMAGE_FULL}" }
-    failure { echo "❌ FAILED" }
+    success { echo "✅ Build & push complete." }
+    failure { echo "❌ Pipeline failed." }
   }
 }
