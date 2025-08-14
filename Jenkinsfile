@@ -1,5 +1,6 @@
 pipeline {
   agent any
+
   options {
     ansiColor('xterm')
     timestamps()
@@ -7,8 +8,9 @@ pipeline {
   }
 
   parameters {
-    // İstersen taban imajı (python-base:3.11) da pipeline'da build etmek için true yap
     booleanParam(name: 'BUILD_BASE', defaultValue: false, description: 'Build & push base image (python-base:3.11)')
+    string(name: 'HEALTHCHECK_URL', defaultValue: 'https://umutcan.info/users', description: 'Health check URL (örn: https://umutcan.info/users veya http://43.229.92.195/users)')
+    string(name: 'HEALTHCHECK_ATTEMPTS', defaultValue: '5', description: 'Health check deneme sayısı')
   }
 
   environment {
@@ -20,22 +22,22 @@ pipeline {
     // ---- BASE IMAGE (opsiyonel) ----
     BASE_IMAGE_NAME      = 'python-base'
     BASE_TAG             = '3.11'
-    BASE_DOCKERFILE_PATH = 'docker/python-base.Dockerfile' // sende: FROM python:3.11 + libpq-dev, gcc...
+    BASE_DOCKERFILE_PATH = 'docker/python-base.Dockerfile'
 
-    // ---- APP IMAGE (senin servis adın "myapp") ----
+    // ---- APP IMAGE ----
     IMAGE_NAME           = 'myapp'
-    APP_DOCKERFILE_PATH  = 'Dockerfile'            // sende: FROM harbor.../python-base:3.11
+    APP_DOCKERFILE_PATH  = 'Dockerfile'
     CONTEXT_DIR          = '.'
 
     // ---- REMOTE SWARM ----
-    SWARM_HOST           = 'ubuntu@192.168.100.105' // Manager kullanıcı@IP (kendine göre değiştir)
+    SWARM_HOST           = 'ubuntu@192.168.100.105' // Manager kullanıcı@IP
     SWARM_SSH            = 'swarm-manager-ssh'      // Jenkins SSH Private Key credentialsId
 
     // ---- DB ENV ----
     DB_CREDS             = 'db-creds'               // Jenkins Credentials (username+password)
-    DB_NAME              = 'mydatabase'             // POSTGRES_DB (sende böyle)
+    DB_NAME              = 'mydatabase'             // POSTGRES_DB
 
-    // ---- Service & Network names (sende bunlar) ----
+    // ---- Service & Network names ----
     APP_SERVICE          = 'flaskapp'
     DB_SERVICE           = 'myapp-db'
     OVERLAY_NET          = 'my_overlay'
@@ -44,6 +46,7 @@ pipeline {
   }
 
   stages {
+
     stage('Checkout') {
       steps { checkout scm }
     }
@@ -51,12 +54,12 @@ pipeline {
     stage('Prepare tags') {
       steps {
         script {
-          def short = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-          env.IMAGE_TAG      = short
-          env.APP_IMAGE_FULL = "${env.REGISTRY}/${env.PROJECT}/${env.IMAGE_NAME}:${env.IMAGE_TAG}"
-          env.APP_IMAGE_LTS  = "${env.REGISTRY}/${env.PROJECT}/${env.IMAGE_NAME}:latest"
-          env.BASE_IMAGE_FULL= "${env.REGISTRY}/${env.PROJECT}/${env.BASE_IMAGE_NAME}:${env.BASE_TAG}"
-          echo ">> APP_IMAGE: ${env.APP_IMAGE_FULL}"
+          def gitShort = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+          env.IMAGE_TAG        = gitShort
+          env.APP_IMAGE_FULL   = "${env.REGISTRY}/${env.PROJECT}/${env.IMAGE_NAME}:${env.IMAGE_TAG}"
+          env.APP_IMAGE_LATEST = "${env.REGISTRY}/${env.PROJECT}/${env.IMAGE_NAME}:latest"
+          env.BASE_IMAGE_FULL  = "${env.REGISTRY}/${env.PROJECT}/${env.BASE_IMAGE_NAME}:${env.BASE_TAG}"
+          echo ">> APP_IMAGE:  ${env.APP_IMAGE_FULL}"
           echo ">> BASE_IMAGE: ${env.BASE_IMAGE_FULL}"
         }
       }
@@ -69,23 +72,24 @@ pipeline {
                                           usernameVariable: 'HARBOR_USER',
                                           passwordVariable: 'HARBOR_PASS')]) {
           sh """
-            set -e
+            set -euo pipefail
             mkdir -p .docker
-            AUTH=\$(echo -n "\$HARBOR_USER:\$HARBOR_PASS" | base64)
-            cat > .docker/config.json <<EOF
-            { "auths": { "https://${env.REGISTRY}": { "auth": "\$AUTH" } } }
-            EOF
+            AUTH=\$(printf "%s" "\$HARBOR_USER:\$HARBOR_PASS" | base64)
+            cat > .docker/config.json <<'JSON'
+            { "auths": { "${REGISTRY}": { "auth": "__AUTH__" } } }
+            JSON
+            sed -i "s/__AUTH__/\$AUTH/" .docker/config.json
 
-            test -f "${env.BASE_DOCKERFILE_PATH}"
+            test -f "${BASE_DOCKERFILE_PATH}"
 
-            docker run --rm \\
-              -v "\$PWD/${env.CONTEXT_DIR}":/workspace \\
-              -v "\$PWD/.docker":/kaniko/.docker \\
-              gcr.io/kaniko-project/executor:latest \\
-              --context=/workspace \\
-              --dockerfile=/workspace/${env.BASE_DOCKERFILE_PATH} \\
-              --destination="${env.BASE_IMAGE_FULL}" \\
-              --force
+            docker run --rm \
+              -v "\$PWD/${CONTEXT_DIR}":/workspace \
+              -v "\$PWD/.docker":/kaniko/.docker \
+              gcr.io/kaniko-project/executor:latest \
+              --context=/workspace \
+              --dockerfile=/workspace/${BASE_DOCKERFILE_PATH} \
+              --destination="${BASE_IMAGE_FULL}" \
+              --snapshotMode=redo --reproducible --single-snapshot
           """
         }
       }
@@ -97,25 +101,27 @@ pipeline {
                                           usernameVariable: 'HARBOR_USER',
                                           passwordVariable: 'HARBOR_PASS')]) {
           sh """
-            set -e
+            set -euo pipefail
             mkdir -p .docker
-            AUTH=\$(echo -n "\$HARBOR_USER:\$HARBOR_PASS" | base64)
-            cat > .docker/config.json <<EOF
-            { "auths": { "https://${env.REGISTRY}": { "auth": "\$AUTH" } } }
-            EOF
+            AUTH=\$(printf "%s" "\$HARBOR_USER:\$HARBOR_PASS" | base64)
+            cat > .docker/config.json <<'JSON'
+            { "auths": { "${REGISTRY}": { "auth": "__AUTH__" } } }
+            JSON
+            sed -i "s/__AUTH__/\$AUTH/" .docker/config.json
 
-            test -f "${env.APP_DOCKERFILE_PATH}"
+            test -f "${APP_DOCKERFILE_PATH}"
 
-            # App Dockerfile'ında taban: FROM ${env.REGISTRY}/${env.PROJECT}/${env.BASE_IMAGE_NAME}:${env.BASE_TAG}
-            docker run --rm \\
-              -v "\$PWD/${env.CONTEXT_DIR}":/workspace \\
-              -v "\$PWD/.docker":/kaniko/.docker \\
-              gcr.io/kaniko-project/executor:latest \\
-              --context=/workspace \\
-              --dockerfile=/workspace/${env.APP_DOCKERFILE_PATH} \\
-              --destination="${env.APP_IMAGE_FULL}" \\
-              --destination="${env.APP_IMAGE_LTS}" \\
-              --force
+            # Öneri: App Dockerfile'ında taban:
+            # FROM ${REGISTRY}/${PROJECT}/${BASE_IMAGE_NAME}:${BASE_TAG}
+            docker run --rm \
+              -v "\$PWD/${CONTEXT_DIR}":/workspace \
+              -v "\$PWD/.docker":/kaniko/.docker \
+              gcr.io/kaniko-project/executor:latest \
+              --context=/workspace \
+              --dockerfile=/workspace/${APP_DOCKERFILE_PATH} \
+              --destination="${APP_IMAGE_FULL}" \
+              --destination="${APP_IMAGE_LATEST}" \
+              --snapshotMode=redo --reproducible --single-snapshot
           """
         }
       }
@@ -125,73 +131,107 @@ pipeline {
       steps {
         withCredentials([
           sshUserPrivateKey(credentialsId: env.SWARM_SSH, keyFileVariable: 'SSH_KEY'),
-          usernamePassword(credentialsId: env.DB_CREDS, usernameVariable: 'DB_USER', passwordVariable: 'DB_PASS')
+          usernamePassword(credentialsId: env.DB_CREDS, usernameVariable: 'DB_USER', passwordVariable: 'DB_PASS'),
+          usernamePassword(credentialsId: env.REGISTRY_CREDENTIALS, usernameVariable: 'HARBOR_USER', passwordVariable: 'HARBOR_PASS')
         ]) {
           sh """
+            set -euo pipefail
+
+            # Değişkenleri remote shell ortamına enjekte ederek çalıştır
+            ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" ${SWARM_HOST} \
+              IMAGE='${APP_IMAGE_FULL}' \
+              HARBOR_HOST='${REGISTRY}' \
+              HARBOR_USER="$HARBOR_USER" \
+              HARBOR_PASS="$HARBOR_PASS" \
+              POSTGRES_USER="$DB_USER" \
+              POSTGRES_PASSWORD="$DB_PASS" \
+              POSTGRES_DB='${DB_NAME}' \
+              APP_SERVICE='${APP_SERVICE}' \
+              DB_SERVICE='${DB_SERVICE}' \
+              OVERLAY_NET='${OVERLAY_NET}' \
+              PUB_PORT='${PUBLISHED_PORT}' \
+              CNT_PORT='${CONTAINER_PORT}' \
+              bash -lc '
+                set -euo pipefail
+
+                echo "[login] harbor: \$HARBOR_HOST"
+                docker login "\$HARBOR_HOST" -u "\$HARBOR_USER" -p "\$HARBOR_PASS" >/dev/null
+
+                echo "[network] ensure overlay: \$OVERLAY_NET"
+                docker network ls --format "{{.Name}}" | grep -x "\$OVERLAY_NET" || \
+                  docker network create -d overlay --attachable "\$OVERLAY_NET"
+
+                echo "[db] ensure service: \$DB_SERVICE"
+                if ! docker service inspect "\$DB_SERVICE" >/dev/null 2>&1; then
+                  docker service create \
+                    --name "\$DB_SERVICE" \
+                    --env POSTGRES_USER="\$POSTGRES_USER" \
+                    --env POSTGRES_PASSWORD="\$POSTGRES_PASSWORD" \
+                    --env POSTGRES_DB="\$POSTGRES_DB" \
+                    --network "\$OVERLAY_NET" \
+                    postgres:16
+                fi
+
+                if docker service inspect "\$APP_SERVICE" >/dev/null 2>&1; then
+                  echo "[update] \$APP_SERVICE"
+                  docker service update \
+                    --env-rm POSTGRES_USER --env-rm POSTGRES_PASSWORD --env-rm POSTGRES_DB --env-rm DB_HOST --env-rm DB_PORT \
+                    "\$APP_SERVICE" || true
+
+                  docker service update \
+                    --with-registry-auth \
+                    --image "\$IMAGE" \
+                    --env-add POSTGRES_USER="\$POSTGRES_USER" \
+                    --env-add POSTGRES_PASSWORD="\$POSTGRES_PASSWORD" \
+                    --env-add POSTGRES_DB="\$POSTGRES_DB" \
+                    --env-add DB_HOST="\$DB_SERVICE" \
+                    --env-add DB_PORT="5432" \
+                    "\$APP_SERVICE"
+                } else {
+                  echo "[create] \$APP_SERVICE"
+                  docker service create \
+                    --name "\$APP_SERVICE" \
+                    --replicas 3 \
+                    --publish "\$PUB_PORT:\$CNT_PORT" \
+                    --network "\$OVERLAY_NET" \
+                    --with-registry-auth \
+                    --env POSTGRES_USER="\$POSTGRES_USER" \
+                    --env POSTGRES_PASSWORD="\$POSTGRES_PASSWORD" \
+                    --env POSTGRES_DB="\$POSTGRES_DB" \
+                    --env DB_HOST="\$DB_SERVICE" \
+                    --env DB_PORT="5432" \
+                    "\$IMAGE"
+                }
+
+                echo
+                docker service ls
+                echo
+                docker service ps --no-trunc "\$APP_SERVICE"
+              '
+          """
+        }
+      }
+    }
+
+    stage('Health Check') {
+      steps {
+        script {
+          // Build parametresinden gelir: örn. https://umutcan.info/users veya http://43.229.92.195/users
+          def url = params.HEALTHCHECK_URL?.trim()
+          def tries = params.HEALTHCHECK_ATTEMPTS?.trim()
+          if (!url) { error("HEALTHCHECK_URL boş olamaz") }
+          sh """
             set -e
-            # --- Remote script ---
-            ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" ${env.SWARM_HOST} bash -lc '
-              set -e
-
-              IMAGE="${env.APP_IMAGE_FULL}"
-              POSTGRES_USER="$DB_USER"
-              POSTGRES_PASSWORD="$DB_PASS"
-              POSTGRES_DB="${env.DB_NAME}"
-
-              # 1) Ağ hazır mı?
-              docker network ls --format "{{.Name}}" | grep -x ${env.OVERLAY_NET} || \\
-                docker network create -d overlay ${env.OVERLAY_NET}
-
-              # 2) DB servisi yoksa oluştur
-              if ! docker service inspect ${env.DB_SERVICE} >/dev/null 2>&1; then
-                echo "[create] ${env.DB_SERVICE}"
-                docker service create \\
-                  --name ${env.DB_SERVICE} \\
-                  --env POSTGRES_USER="$POSTGRES_USER" \\
-                  --env POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \\
-                  --env POSTGRES_DB="$POSTGRES_DB" \\
-                  --network ${env.OVERLAY_NET} \\
-                  postgres:16
-              else
-                echo "[skip] ${env.DB_SERVICE} already exists"
-              fi
-
-              # 3) App servisi varsa update, yoksa create
-              if docker service inspect ${env.APP_SERVICE} >/dev/null 2>&1; then
-                echo "[update] ${env.APP_SERVICE}"
-                # (Varsa eski ENV'leri temizlemeye çalış; yoksa hata vermesin)
-                docker service update \\
-                  --env-rm POSTGRES_USER --env-rm POSTGRES_PASSWORD --env-rm POSTGRES_DB --env-rm DB_HOST --env-rm DB_PORT \\
-                  ${env.APP_SERVICE} || true
-
-                docker service update \\
-                  --with-registry-auth \\
-                  --image "$IMAGE" \\
-                  --env-add POSTGRES_USER="$POSTGRES_USER" \\
-                  --env-add POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \\
-                  --env-add POSTGRES_DB="$POSTGRES_DB" \\
-                  --env-add DB_HOST="${env.DB_SERVICE}" \\
-                  --env-add DB_PORT="5432" \\
-                  ${env.APP_SERVICE}
-              else
-                echo "[create] ${env.APP_SERVICE}"
-                docker service create \\
-                  --name ${env.APP_SERVICE} \\
-                  --replicas 3 \\
-                  --publish ${env.PUBLISHED_PORT}:${env.CONTAINER_PORT} \\
-                  --network ${env.OVERLAY_NET} \\
-                  --with-registry-auth \\
-                  --env POSTGRES_USER="$POSTGRES_USER" \\
-                  --env POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \\
-                  --env POSTGRES_DB="$POSTGRES_DB" \\
-                  --env DB_HOST="${env.DB_SERVICE}" \\
-                  --env DB_PORT="5432" \\
-                  "$IMAGE"
-              fi
-
-              echo; docker service ls
-              echo; docker service ps --no-trunc ${env.APP_SERVICE}
-            '
+            echo 'Health check → ${url}'
+            i=0
+            until [ \$i -ge ${tries} ]; do
+              i=\$((i+1))
+              code=\$(curl -s -k -o /dev/null -w "%{http_code}" "${url}")
+              echo "Try \$i → HTTP \$code"
+              [ "\$code" = "200" ] && exit 0
+              sleep 3
+            done
+            echo "Health check failed"; exit 1
           """
         }
       }
