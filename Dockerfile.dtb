@@ -1,16 +1,17 @@
 FROM harbor.umutcan.info/myproject/python-base:3.11
+
+
+RUN apt-get update && \
+    apt-get install -y gcc build-essential libpq-dev libpq5 && \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY requirements.txt .
-
-# pip’i güncelle; timeout ve retry artır; önce PyPI, başarısızsa mirror dene
-RUN set -eux; \
-    python -m pip install --upgrade pip wheel setuptools; \
-    for i in 1 2 3 4 5; do \
-      pip install --no-cache-dir --default-timeout=60 -r requirements.txt -i https://pypi.org/simple && break || sleep 5; \
-    done || \
-    pip install --no-cache-dir --default-timeout=60 -r requirements.txt -i https://pypi.python.org/simple
+RUN pip uninstall -y psycopg2-binary psycopg2 || true && \
+    pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .
 
 CMD ["python", "app.py"]
+
