@@ -3,13 +3,13 @@ pipeline {
   options { timestamps(); disableConcurrentBuilds(); timeout(time: 30, unit: 'MINUTES') }
 
   parameters {
-    string(name: 'REGISTRY',    defaultValue: 'harbor.umutcan.info', description: 'Harbor registry')
-    string(name: 'PROJECT',     defaultValue: 'myproject',           description: 'Harbor project')
-    string(name: 'IMAGE_NAME',  defaultValue: 'myapp',               description: 'Image name')
-    string(name: 'IMAGE_TAG',   defaultValue: 'latest',              description: 'Image tag')
+    string(name: 'REGISTRY',        defaultValue: 'harbor.umutcan.info', description: 'Harbor registry')
+    string(name: 'PROJECT',         defaultValue: 'myproject',           description: 'Harbor project')
+    string(name: 'IMAGE_NAME',      defaultValue: 'myapp',               description: 'Image name')
+    string(name: 'IMAGE_TAG',       defaultValue: 'latest',              description: 'Image tag')
     string(name: 'DOCKERFILE_PATH', defaultValue: 'docker/Dockerfile.app', description: 'Dockerfile path')
     booleanParam(name: 'USE_BASE',  defaultValue: false, description: 'BASE_IMAGE=harbor.../python-base:3.11 kullan')
-    string(name: 'CREDS_ID', defaultValue: 'harbor-creds', description: 'Harbor credentials ID (Username+Password)')
+    string(name: 'CREDS_ID',        defaultValue: 'harbor-creds',        description: 'Harbor credentials ID (Username+Password)')
   }
 
   environment {
@@ -35,14 +35,13 @@ pipeline {
     stage('Build & Push (Kaniko)') {
       steps {
         withCredentials([usernamePassword(credentialsId: "${params.CREDS_ID}", usernameVariable: 'REG_USER', passwordVariable: 'REG_PASS')]) {
-          sh '''
-            set -euo pipefail
+          sh(script: '''
+            set -Eeuo pipefail
             echo ">> Prepare Harbor auth for Kaniko"
-            mkdir -p $HOME/.docker
-            # base64 -w 0 bazı sistemlerde yoksa: printf ... | base64 | tr -d '\\n'
+            mkdir -p "$HOME/.docker"
             AUTH=$(echo -n "${REG_USER}:${REG_PASS}" | base64 -w 0 2>/dev/null || echo -n "${REG_USER}:${REG_PASS}" | base64 | tr -d '\\n')
-            # Kaniko/Docker genelde "registry" anahtarını protokolsüz ister
-            printf '{"auths":{"%s":{"auth":"%s"}}}\n' "${REGISTRY}" "${AUTH}" > $HOME/.docker/config.json
+            # Kaniko okumak için protokolsüz key daha uyumlu
+            printf '{"auths":{"%s":{"auth":"%s"}}}\n' "${REGISTRY}" "${AUTH}" > "$HOME/.docker/config.json"
 
             if [ "${USE_BASE}" = "true" ]; then
               BASE_ARG="--build-arg BASE_IMAGE=${REGISTRY}/${PROJECT}/python-base:3.11"
@@ -65,7 +64,7 @@ pipeline {
 
             echo ">> Kaniko digest (proof):"
             test -s .kaniko_digest.txt && cat .kaniko_digest.txt || { echo "No digest file => push/build failed"; exit 1; }
-          '''
+          ''', shell: '/usr/bin/env bash')
         }
       }
     }
@@ -73,15 +72,14 @@ pipeline {
     stage('Verify on Harbor') {
       steps {
         withCredentials([usernamePassword(credentialsId: "${params.CREDS_ID}", usernameVariable: 'U', passwordVariable: 'P')]) {
-          sh '''
-            set -e
+          sh(script: '''
+            set -Eeuo pipefail
             echo ">> Checking tag via Harbor API"
-            # repository adında slash varsa bazı sürümlerde encode gerekebilir:
             REPO="${IMAGE_NAME}"
             curl -sfk -u "${U}:${P}" \
               "https://${REGISTRY}/api/v2.0/projects/${PROJECT}/repositories/${REPO}/artifacts?with_tag=true" \
               | grep -E "\"name\":\"${IMAGE_TAG}\"" -q && echo "Tag found on Harbor." || (echo "Tag NOT found!"; exit 1)
-          '''
+          ''', shell: '/usr/bin/env bash')
         }
       }
     }
