@@ -27,8 +27,8 @@ pipeline {
 
     stage('Preflight: Dockerfile check') {
       steps {
-        sh(script: '''
-          set -Eeuo pipefail
+        sh '''
+          set -eu
           if [ ! -f "${DOCKERFILE_PATH}" ]; then
             echo "❌ Dockerfile bulunamadı: ${DOCKERFILE_PATH}"
             echo "Mevcut docker/ dizini içeriği:"
@@ -36,7 +36,7 @@ pipeline {
             exit 2
           fi
           echo "✅ Dockerfile OK -> ${DOCKERFILE_PATH}"
-        ''', shell: '/usr/bin/env bash')
+        '''
       }
     }
 
@@ -51,12 +51,14 @@ pipeline {
     stage('Build & Push (Kaniko)') {
       steps {
         withCredentials([usernamePassword(credentialsId: "${params.CREDS_ID}", usernameVariable: 'REG_USER', passwordVariable: 'REG_PASS')]) {
-          sh(script: '''
-            set -Eeuo pipefail
+          sh '''
+            set -eu
             echo ">> Prepare Harbor auth for Kaniko"
             mkdir -p "$HOME/.docker"
-            AUTH=$(echo -n "${REG_USER}:${REG_PASS}" | base64 -w 0 2>/dev/null || echo -n "${REG_USER}:${REG_PASS}" | base64 | tr -d '\\n')
-            # Kaniko/Docker için protokolsüz key daha uyumlu
+            # GNU base64 -w 0 yoksa alternatifle satır sonlarını kaldır
+            AUTH=$( (echo -n "${REG_USER}:${REG_PASS}" | base64 -w 0) 2>/dev/null || echo -n "${REG_USER}:${REG_PASS}" | base64 | tr -d '\n' )
+
+            # Kaniko için protokolsüz key daha uyumlu (https:// ekleme)
             printf '{"auths":{"%s":{"auth":"%s"}}}\n' "${REGISTRY}" "${AUTH}" > "$HOME/.docker/config.json"
 
             if [ "${USE_BASE}" = "true" ]; then
@@ -79,8 +81,13 @@ pipeline {
               --single-snapshot
 
             echo ">> Kaniko digest (proof):"
-            test -s .kaniko_digest.txt && cat .kaniko_digest.txt || { echo "No digest file => push/build failed"; exit 1; }
-          ''', shell: '/usr/bin/env bash')
+            if [ -s .kaniko_digest.txt ]; then
+              cat .kaniko_digest.txt
+            else
+              echo "No digest file => push/build failed"
+              exit 1
+            fi
+          '''
         }
       }
     }
@@ -88,14 +95,14 @@ pipeline {
     stage('Verify on Harbor') {
       steps {
         withCredentials([usernamePassword(credentialsId: "${params.CREDS_ID}", usernameVariable: 'U', passwordVariable: 'P')]) {
-          sh(script: '''
-            set -Eeuo pipefail
+          sh '''
+            set -eu
             echo ">> Checking tag via Harbor API"
             REPO="${IMAGE_NAME}"
             curl -sfk -u "${U}:${P}" \
               "https://${REGISTRY}/api/v2.0/projects/${PROJECT}/repositories/${REPO}/artifacts?with_tag=true" \
-              | grep -E "\"name\":\"${IMAGE_TAG}\"" -q && echo "Tag found on Harbor." || (echo "Tag NOT found!"; exit 1)
-          ''', shell: '/usr/bin/env bash')
+              | grep -E "\"name\":\"${IMAGE_TAG}\"" -q && echo "Tag found on Harbor." || { echo "Tag NOT found!"; exit 1; }
+          '''
         }
       }
     }
