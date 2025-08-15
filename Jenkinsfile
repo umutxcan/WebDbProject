@@ -19,7 +19,7 @@ pipeline {
   stages {
     stage('Checkout') {
       steps {
-        checkout scm  // GitHub için job’da tanımlı githubCred zaten burada kullanılıyor
+        checkout scm
         sh 'echo "Git rev: $(git rev-parse --short HEAD)"'
       }
     }
@@ -36,13 +36,13 @@ pipeline {
       steps {
         withCredentials([usernamePassword(credentialsId: "${params.CREDS_ID}", usernameVariable: 'REG_USER', passwordVariable: 'REG_PASS')]) {
           sh '''
-            set -e
-            echo ">> Prepare auth for Kaniko"
+            set -euo pipefail
+            echo ">> Prepare Harbor auth for Kaniko"
             mkdir -p $HOME/.docker
-            AUTH=$(echo -n "${REG_USER}:${REG_PASS}" | base64 -w 0)
-            cat > $HOME/.docker/config.json <<EOF
-            { "auths": { "https://${REGISTRY}": { "auth": "${AUTH}" } } }
-            EOF
+            # base64 -w 0 bazı sistemlerde yoksa: printf ... | base64 | tr -d '\\n'
+            AUTH=$(echo -n "${REG_USER}:${REG_PASS}" | base64 -w 0 2>/dev/null || echo -n "${REG_USER}:${REG_PASS}" | base64 | tr -d '\\n')
+            # Kaniko/Docker genelde "registry" anahtarını protokolsüz ister
+            printf '{"auths":{"%s":{"auth":"%s"}}}\n' "${REGISTRY}" "${AUTH}" > $HOME/.docker/config.json
 
             if [ "${USE_BASE}" = "true" ]; then
               BASE_ARG="--build-arg BASE_IMAGE=${REGISTRY}/${PROJECT}/python-base:3.11"
@@ -52,14 +52,35 @@ pipeline {
 
             echo ">> Build & push ${REGISTRY}/${PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}"
             docker run --rm \
-              -v $(pwd):/workspace \
-              -v $HOME/.docker:/kaniko/.docker \
+              -v "$(pwd)":/workspace \
+              -v "$HOME/.docker":/kaniko/.docker \
               ${KANIKO_IMG} \
               --context=/workspace \
               --dockerfile=${DOCKERFILE_PATH} \
               ${BASE_ARG} \
               --destination=${REGISTRY}/${PROJECT}/${IMAGE_NAME}:${IMAGE_TAG} \
+              --digest-file /workspace/.kaniko_digest.txt \
+              --verbosity=info \
               --single-snapshot
+
+            echo ">> Kaniko digest (proof):"
+            test -s .kaniko_digest.txt && cat .kaniko_digest.txt || { echo "No digest file => push/build failed"; exit 1; }
+          '''
+        }
+      }
+    }
+
+    stage('Verify on Harbor') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: "${params.CREDS_ID}", usernameVariable: 'U', passwordVariable: 'P')]) {
+          sh '''
+            set -e
+            echo ">> Checking tag via Harbor API"
+            # repository adında slash varsa bazı sürümlerde encode gerekebilir:
+            REPO="${IMAGE_NAME}"
+            curl -sfk -u "${U}:${P}" \
+              "https://${REGISTRY}/api/v2.0/projects/${PROJECT}/repositories/${REPO}/artifacts?with_tag=true" \
+              | grep -E "\"name\":\"${IMAGE_TAG}\"" -q && echo "Tag found on Harbor." || (echo "Tag NOT found!"; exit 1)
           '''
         }
       }
