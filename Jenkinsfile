@@ -15,7 +15,7 @@ pipeline {
     PROJECT    = 'myproject'
     IMAGE_NAME = 'myapp'
 
-    // Uygulama runtime env
+    // App runtime environment
     DB_HOST = 'myapp-db'
     DB_USER = 'postgres'
     DB_NAME = 'postgres'
@@ -58,16 +58,18 @@ pipeline {
 
     stage('Build & Push (Kaniko + cache)') {
       steps {
-        withEnv(["CACHE_REPO=${params.CACHE_REPO}"]) {
+        withEnv([
+          "CACHE_REPO=${params.CACHE_REPO}",
+          "USE_BASE=${params.USE_BASE}"
+        ]) {
           withCredentials([usernamePassword(credentialsId: "${params.CREDS_ID}", usernameVariable: 'REG_USER', passwordVariable: 'REG_PASS')]) {
             sh '''
               set -eu
               echo ">> Prepare Harbor auth for Kaniko"
               mkdir -p "$HOME/.docker"
-              AUTH=$( (echo -n "${REG_USER}:${REG_PASS}" | base64 -w 0) 2>/dev/null || echo -n "${REG_USER}:${REG_PASS}" | base64 | tr -d '\n' )
+              AUTH=$( (echo -n "${REG_USER}:${REG_PASS}" | base64 -w 0) 2>/dev/null || echo -n "${REG_USER}:${REG_PASS}" | base64 | tr -d '\\n' )
               printf '{"auths":{"%s":{"auth":"%s"}}}\n' "${REGISTRY}" "${AUTH}" > "$HOME/.docker/config.json"
 
-              # İsteğe bağlı base arg (Dockerfile.dtb içinde ARG BASE_IMAGE olmalı)
               if [ "${USE_BASE}" = "true" ]; then
                 BASE_ARG="--build-arg BASE_IMAGE=${REGISTRY}/${PROJECT}/python-base:3.11"
               else
