@@ -7,7 +7,7 @@ pipeline {
     string(name: 'PROJECT',         defaultValue: 'myproject',           description: 'Harbor project')
     string(name: 'IMAGE_NAME',      defaultValue: 'myapp',               description: 'Image name')
     string(name: 'IMAGE_TAG',       defaultValue: 'latest',              description: 'Image tag')
-    string(name: 'DOCKERFILE_PATH', defaultValue: 'docker/Dockerfile.dtb', description: 'Path to Dockerfile (örn: docker/Dockerfile.dtb)')
+    string(name: 'DOCKERFILE_PATH', defaultValue: 'Dockerfile.dtb', description: 'Path to Dockerfile (örn: docker/Dockerfile.dtb)')
     booleanParam(name: 'USE_BASE',  defaultValue: false, description: 'BASE_IMAGE=harbor.../python-base:3.11 kullan')
     string(name: 'CREDS_ID',        defaultValue: 'harbor-creds',        description: 'Harbor credentials ID (Username+Password)')
   }
