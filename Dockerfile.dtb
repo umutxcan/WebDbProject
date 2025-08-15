@@ -7,7 +7,8 @@ WORKDIR /app
 
 COPY requirements.txt .
 RUN pip uninstall -y psycopg2-binary psycopg2 || true && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt --index-url=https://pypi.tuna.tsinghua.edu.cn/simple
+
 
 COPY app.py .
 
