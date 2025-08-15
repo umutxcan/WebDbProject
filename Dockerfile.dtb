@@ -1,9 +1,7 @@
 FROM harbor.umutcan.info/myproject/python-base:3.11
 
 
-RUN apt-get update && \
-    apt-get install -y gcc build-essential libpq-dev libpq5 && \
-    rm -rf /var/lib/apt/lists/*
+
 
 WORKDIR /app
 
