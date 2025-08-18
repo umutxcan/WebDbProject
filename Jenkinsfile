@@ -79,9 +79,20 @@ pipeline {
               IMAGE_REF="${REGISTRY}/${PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}"
               echo ">> Build & push ${IMAGE_REF} with ${DOCKERFILE_PATH}"
 
+              # Proxy değişkenlerin varsa Kaniko'ya geçir
+              PROXY_ARGS=""
+              [ -n "${HTTP_PROXY:-}" ]  && PROXY_ARGS="$PROXY_ARGS -e HTTP_PROXY=$HTTP_PROXY"
+              [ -n "${HTTPS_PROXY:-}" ] && PROXY_ARGS="$PROXY_ARGS -e HTTPS_PROXY=$HTTPS_PROXY"
+              [ -n "${NO_PROXY:-}" ]    && PROXY_ARGS="$PROXY_ARGS -e NO_PROXY=$NO_PROXY"
+              [ -n "${http_proxy:-}" ]  && PROXY_ARGS="$PROXY_ARGS -e http_proxy=$http_proxy"
+              [ -n "${https_proxy:-}" ] && PROXY_ARGS="$PROXY_ARGS -e https_proxy=$https_proxy"
+              [ -n "${no_proxy:-}" ]    && PROXY_ARGS="$PROXY_ARGS -e no_proxy=$no_proxy"
+
               docker run --rm \
                 -v "$(pwd)":/workspace \
                 -v "$HOME/.docker":/kaniko/.docker \
+                -v /etc/ssl/certs:/etc/ssl/certs:ro \
+                $PROXY_ARGS \
                 ${KANIKO_IMG} \
                 --context=/workspace \
                 --dockerfile="${DOCKERFILE_PATH}" \
@@ -106,10 +117,12 @@ pipeline {
         withCredentials([usernamePassword(credentialsId: "${params.CREDS_ID}", usernameVariable: 'U', passwordVariable: 'P')]) {
           sh '''
             set -eu
-            echo ">> Checking tag via Harbor API"
-            curl -sfk -u "${U}:${P}" \
-              "https://${REGISTRY}/api/v2.0/projects/${PROJECT}/repositories/${IMAGE_NAME}/artifacts?with_tag=true" \
-              | grep -E "\"name\":\"${IMAGE_TAG}\"" -q && echo "Tag found on Harbor." || { echo "Tag NOT found!"; exit 1; }
+            REPO_PATH="${PROJECT}/${IMAGE_NAME}"
+            echo ">> Verifying tag via Harbor API (artifact by reference)"
+            # Tag/digest var mı diye direkt artifact endpoint'ini sorgula (200 => var)
+            curl -sf -u "${U}:${P}" \
+              "https://${REGISTRY}/api/v2.0/projects/${PROJECT}/repositories/${IMAGE_NAME}/artifacts/${IMAGE_TAG}" \
+              > /dev/null && echo "✅ Tag ${IMAGE_TAG} exists on ${REGISTRY}/${REPO_PATH}" || { echo "❌ Tag ${IMAGE_TAG} NOT found on Harbor"; exit 1; }
           '''
         }
       }
