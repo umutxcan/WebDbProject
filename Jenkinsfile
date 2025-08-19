@@ -8,7 +8,10 @@ pipeline {
     booleanParam(name: 'USE_BASE',  defaultValue: true,                    description: 'BASE_IMAGE=harbor.../python-base:3.11 kullan')
     string(name: 'CACHE_REPO',      defaultValue: 'harbor.umutcan.info/myproject/kaniko-cache', description: 'Kaniko cache repo')
     string(name: 'CREDS_ID',        defaultValue: 'harbor-creds',          description: 'Harbor Jenkins Credentials (user+pass)')
-    string(name: 'DB_SECRET_CRED_ID', defaultValue: 'pg-password',         description: 'Jenkins Secret Text (Postgres şifresi) ID')
+
+    // ---- DB secret için iki seçenek: (1) düz param (geçici), (2) Jenkins Secret Text Credential ID
+    string(name: 'DB_SECRET_PLAIN', defaultValue: '',                      description: 'Opsiyonel: Postgres şifresi (geçici ve test için). Boşsa kullanılmaz.')
+    string(name: 'DB_SECRET_CRED_ID', defaultValue: 'pg-password',         description: 'Opsiyonel: Jenkins Secret Text ID (ör: pg-password)')
   }
 
   environment {
@@ -127,20 +130,32 @@ pipeline {
       }
     }
 
-    // ---- Ensure Swarm Secret exists (create from Jenkins Secret Text) ----
     stage('Ensure Swarm Secret') {
       steps {
-        withCredentials([string(credentialsId: "${params.DB_SECRET_CRED_ID}", variable: 'DB_SECRET')]) {
-          sh '''
-            set -eu
-            if docker secret ls --format '{{.Name}}' | grep -w "^${SECRET_NAME}$" >/dev/null; then
-              echo "✅ Swarm secret already exists: ${SECRET_NAME}"
-            else
-              echo ">> Creating Swarm secret: ${SECRET_NAME}"
-              printf '%s' "$DB_SECRET" | docker secret create "${SECRET_NAME}" - >/dev/null
-              echo "✅ Created secret: ${SECRET_NAME}"
-            fi
-          '''
+        script {
+          // 1) Secret zaten var mı?
+          def exists = sh(returnStatus: true, script: "docker secret ls --format '{{.Name}}' | grep -w '^${env.SECRET_NAME}\$' >/dev/null") == 0
+          if (exists) {
+            echo "✅ Swarm secret already exists: ${env.SECRET_NAME}"
+          } else {
+            // 2) Parametre ile düz şifre verildiyse onu kullan (quoting sorunu yaşamamak için dosya yazıp pipe'lıyoruz)
+            if (params.DB_SECRET_PLAIN?.trim()) {
+              writeFile file: '.tmp_secret', text: params.DB_SECRET_PLAIN
+              sh "docker secret create '${env.SECRET_NAME}' .tmp_secret >/dev/null"
+              sh "shred -u .tmp_secret || rm -f .tmp_secret"
+              echo "✅ Created secret from DB_SECRET_PLAIN: ${env.SECRET_NAME}"
+            } else {
+              // 3) Jenkins Secret Text credential dene; yoksa anlaşılır hata üret
+              try {
+                withCredentials([string(credentialsId: params.DB_SECRET_CRED_ID, variable: 'DB_SECRET')]) {
+                  sh "printf '%s' \"\$DB_SECRET\" | docker secret create '${env.SECRET_NAME}' - >/dev/null"
+                }
+                echo "✅ Created secret from Jenkins credential '${params.DB_SECRET_CRED_ID}': ${env.SECRET_NAME}"
+              } catch (e) {
+                error "❌ Swarm secret yok ve oluşturulamadı: Lütfen ya 'DB_SECRET_PLAIN' parametresine şifre gir, ya da Jenkins'te Secret Text oluşturup ID'sini 'DB_SECRET_CRED_ID' olarak ver. (Mevcut: '${params.DB_SECRET_CRED_ID}')"
+              }
+            }
+          }
         }
       }
     }
