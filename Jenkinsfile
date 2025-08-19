@@ -8,6 +8,7 @@ pipeline {
     booleanParam(name: 'USE_BASE',  defaultValue: true,                    description: 'BASE_IMAGE=harbor.../python-base:3.11 kullan')
     string(name: 'CACHE_REPO',      defaultValue: 'harbor.umutcan.info/myproject/kaniko-cache', description: 'Kaniko cache repo')
     string(name: 'CREDS_ID',        defaultValue: 'harbor-creds',          description: 'Harbor Jenkins Credentials (user+pass)')
+    string(name: 'DB_SECRET_CRED_ID', defaultValue: 'pg-password',         description: 'Jenkins Secret Text (Postgres şifresi) ID')
   }
 
   environment {
@@ -15,12 +16,12 @@ pipeline {
     PROJECT    = 'myproject'
     IMAGE_NAME = 'myapp'
 
-    // App runtime environment
+    // App runtime env
     DB_HOST = 'myapp-db'
     DB_USER = 'postgres'
     DB_NAME = 'postgres'
-    SECRET_NAME   = 'pg_password'
-    SECRET_TARGET = 'pg_password'
+    SECRET_NAME   = 'pg_password'            // Swarm secret adı
+    SECRET_TARGET = 'pg_password'            // Container içi target
     DB_PASS_FILE_PATH = '/run/secrets/pg_password'
 
     KANIKO_IMG = 'gcr.io/kaniko-project/executor:latest'
@@ -79,7 +80,6 @@ pipeline {
               IMAGE_REF="${REGISTRY}/${PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}"
               echo ">> Build & push ${IMAGE_REF} with ${DOCKERFILE_PATH}"
 
-              # Proxy değişkenlerin varsa Kaniko'ya geçir
               PROXY_ARGS=""
               [ -n "${HTTP_PROXY:-}" ]  && PROXY_ARGS="$PROXY_ARGS -e HTTP_PROXY=$HTTP_PROXY"
               [ -n "${HTTPS_PROXY:-}" ] && PROXY_ARGS="$PROXY_ARGS -e HTTPS_PROXY=$HTTPS_PROXY"
@@ -119,10 +119,27 @@ pipeline {
             set -eu
             REPO_PATH="${PROJECT}/${IMAGE_NAME}"
             echo ">> Verifying tag via Harbor API (artifact by reference)"
-            # Tag/digest var mı diye direkt artifact endpoint'ini sorgula (200 => var)
             curl -sf -u "${U}:${P}" \
               "https://${REGISTRY}/api/v2.0/projects/${PROJECT}/repositories/${IMAGE_NAME}/artifacts/${IMAGE_TAG}" \
               > /dev/null && echo "✅ Tag ${IMAGE_TAG} exists on ${REGISTRY}/${REPO_PATH}" || { echo "❌ Tag ${IMAGE_TAG} NOT found on Harbor"; exit 1; }
+          '''
+        }
+      }
+    }
+
+    // ---- Ensure Swarm Secret exists (create from Jenkins Secret Text) ----
+    stage('Ensure Swarm Secret') {
+      steps {
+        withCredentials([string(credentialsId: "${params.DB_SECRET_CRED_ID}", variable: 'DB_SECRET')]) {
+          sh '''
+            set -eu
+            if docker secret ls --format '{{.Name}}' | grep -w "^${SECRET_NAME}$" >/dev/null; then
+              echo "✅ Swarm secret already exists: ${SECRET_NAME}"
+            else
+              echo ">> Creating Swarm secret: ${SECRET_NAME}"
+              printf '%s' "$DB_SECRET" | docker secret create "${SECRET_NAME}" - >/dev/null
+              echo "✅ Created secret: ${SECRET_NAME}"
+            fi
           '''
         }
       }
