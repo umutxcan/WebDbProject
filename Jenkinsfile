@@ -181,8 +181,6 @@ pipeline {
               --update-order stop-first \
               --update-parallelism 1 \
               --image "${IMAGE_REF}" \
-              --publish-rm 8080 \
-              --publish-add mode=host,target=8080,published=8080 \
               --env-rm DB_PASS \
               --env-add DB_HOST="${DB_HOST}" \
               --env-add DB_USER="${DB_USER}" \
