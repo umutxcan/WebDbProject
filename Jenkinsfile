@@ -190,8 +190,8 @@ pipeline {
               "${SERVICE}"
           else
             docker service create --name "${SERVICE}" --replicas 3 \
-              --publish mode=host,target=8080,published=8080 \
-              --network app_net \
+              --publish mode=ingress,target=5000,published=8080 \
+              --network my_overlay \
               --with-registry-auth \
               --env DB_HOST="${DB_HOST}" \
               --env DB_USER="${DB_USER}" \
