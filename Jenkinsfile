@@ -178,7 +178,7 @@ pipeline {
 
             docker service update \
               --with-registry-auth \
-              --update-order stop-first \
+              --rollback-order stop-first \
               --update-parallelism 1 \
               --image "${IMAGE_REF}" \
               --env-rm DB_PASS \
