@@ -181,6 +181,7 @@ pipeline {
               --rollback-order stop-first \
               --update-parallelism 1 \
               --image "${IMAGE_REF}" \
+               --detach \
               --env-rm DB_PASS \
               --env-add DB_HOST="${DB_HOST}" \
               --env-add DB_USER="${DB_USER}" \
