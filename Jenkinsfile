@@ -186,8 +186,6 @@ pipeline {
               --env-add DB_USER="${DB_USER}" \
               --env-add DB_NAME="${DB_NAME}" \
               --env-add DB_PASS_FILE="${DB_PASS_FILE_PATH}" \
-              --publish-rm 8080 \
-              --publish-add published=8080,target=5000,mode=ingress \
               ${SECRET_ARGS} \
               "${SERVICE}"
           else
