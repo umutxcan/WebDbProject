@@ -164,7 +164,7 @@ pipeline {
       steps {
         sh '''
           set -eu
-          docker network inspect my_overlay  >/dev/null 2>&1 || docker network create --driver overlay app_net
+          docker network inspect my_overlay  >/dev/null 2>&1 || docker network create --driver overlay my_overlay
 
           SERVICE=flaskapp
           IMAGE_REF="${REGISTRY}/${PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}"
