@@ -203,7 +203,7 @@ pipeline {
                 --env-add DB_USER=${DB_USER} \\
                 --env-add DB_NAME=${DB_NAME} \\
                 --env-add DB_PASS_FILE=${DB_PASS_FILE_PATH} \\
-                \${SECRET_ARGS} \\
+                \\${SECRET_ARGS} \\
                 ${SERVICE}
             else
               docker service create --name ${SERVICE} --replicas 3 \\
