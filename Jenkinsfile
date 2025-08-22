@@ -163,7 +163,7 @@ pipeline {
     stage('Deploy to Swarm') {
   steps {
     withCredentials([usernamePassword(credentialsId: "${params.CREDS_ID}", usernameVariable: 'HARBOR_USER', passwordVariable: 'HARBOR_PASS')]) {
-      sshagent(credentials: ['swarm-manager-ssh']) {
+      sshagent(credentials: ['SWARM_SSH']) {
         sh """
           set -eu
           SSH_HOST=192.168.100.105
