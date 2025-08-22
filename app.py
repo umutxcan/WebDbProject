@@ -42,6 +42,10 @@ def get_kubilay():   # buradaki isim değişti
 def get_umut():   # buradaki isim değişti
     return "proje bitmistir"
 
+@app.route('/eda', methods=['GET'])
+def get_umut():   # buradaki isim değişti
+    return "sadece guzelime ait olan kisimdir"
+
 
 
 if __name__ == '__main__':
