@@ -38,6 +38,10 @@ def get_users():
 def get_kubilay():   # buradaki isim değişti
     return "kubilay kaptanoglu"
 
+@app.route('/umut', methods=['GET'])
+def get_kubilay():   # buradaki isim değişti
+    return "proje bitmistir"
+
 
 
 if __name__ == '__main__':
