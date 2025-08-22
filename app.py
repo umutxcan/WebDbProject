@@ -43,7 +43,7 @@ def get_umut():   # buradaki isim değişti
     return "proje bitmistir"
 
 @app.route('/eda', methods=['GET'])
-def get_umut():   # buradaki isim değişti
+def get_eda():   # buradaki isim değişti
     return "sadece guzelime ait olan kisimdir"
 
 
