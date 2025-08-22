@@ -193,28 +193,28 @@ pipeline {
                 SECRET_ARGS=\\"--secret-add source=${SECRET_NAME},target=${SECRET_TARGET}\\"
               fi
 
-              docker service update \
-                --with-registry-auth \
-                --update-order stop-first \
-                --update-parallelism 1 \
-                --image ${IMAGE_REF} \
-                --env-rm DB_PASS \
-                --env-add DB_HOST=${DB_HOST} \
-                --env-add DB_USER=${DB_USER} \
-                --env-add DB_NAME=${DB_NAME} \
-                --env-add DB_PASS_FILE=${DB_PASS_FILE_PATH} \
-                ${SECRET_ARGS} \
+              docker service update \\
+                --with-registry-auth \\
+                --update-order stop-first \\
+                --update-parallelism 1 \\
+                --image ${IMAGE_REF} \\
+                --env-rm DB_PASS \\
+                --env-add DB_HOST=${DB_HOST} \\
+                --env-add DB_USER=${DB_USER} \\
+                --env-add DB_NAME=${DB_NAME} \\
+                --env-add DB_PASS_FILE=${DB_PASS_FILE_PATH} \\
+                \${SECRET_ARGS} \\
                 ${SERVICE}
             else
-              docker service create --name ${SERVICE} --replicas 3 \
-                --publish mode=ingress,target=5000,published=8080 \
-                --network my_overlay \
-                --with-registry-auth \
-                --env DB_HOST=${DB_HOST} \
-                --env DB_USER=${DB_USER} \
-                --env DB_NAME=${DB_NAME} \
-                --env DB_PASS_FILE=${DB_PASS_FILE_PATH} \
-                --secret source=${SECRET_NAME},target=${SECRET_TARGET} \
+              docker service create --name ${SERVICE} --replicas 3 \\
+                --publish mode=ingress,target=5000,published=8080 \\
+                --network my_overlay \\
+                --with-registry-auth \\
+                --env DB_HOST=${DB_HOST} \\
+                --env DB_USER=${DB_USER} \\
+                --env DB_NAME=${DB_NAME} \\
+                --env DB_PASS_FILE=${DB_PASS_FILE_PATH} \\
+                --secret source=${SECRET_NAME},target=${SECRET_TARGET} \\
                 ${IMAGE_REF}
             fi
           "
@@ -223,6 +223,7 @@ pipeline {
     }
   }
 }
+
 
 
   }
