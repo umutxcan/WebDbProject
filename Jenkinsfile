@@ -160,11 +160,12 @@ pipeline {
       }
     }
 
+    
     stage('Deploy to Swarm') {
   steps {
     withCredentials([usernamePassword(credentialsId: "${params.CREDS_ID}", usernameVariable: 'HARBOR_USER', passwordVariable: 'HARBOR_PASS')]) {
       sshagent(credentials: ['SWARM_SSH']) {
-        sh """
+        sh '''
           set -eu
           SSH_HOST=192.168.100.105
           SSH_USER=ubuntu
@@ -178,21 +179,18 @@ pipeline {
           DB_NAME="${DB_NAME}"
           DB_PASS_FILE_PATH="${DB_PASS_FILE_PATH}"
 
-          ssh -o StrictHostKeyChecking=no \${SSH_USER}@\${SSH_HOST} '
+          ssh -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} "
             set -euo pipefail
 
-            # Harbor login (kimlik bilgisini bu CLI üzerinden Swarm'a aktaralım)
-            echo "${HARBOR_PASS}" | docker login "${REGISTRY}" -u "${HARBOR_USER}" --password-stdin
+            echo \\"${HARBOR_PASS}\\" | docker login \\"${REGISTRY}\\" -u \\"${HARBOR_USER}\\" --password-stdin
 
-            # Network
             docker network inspect my_overlay >/dev/null 2>&1 || docker network create --driver overlay my_overlay
 
-            if docker service ls --format "{{.Name}}" | grep -w "^${SERVICE}\$" >/dev/null; then
-              # Secret bagli mi diye var
-              if docker service inspect ${SERVICE} --format "{{json .Spec.TaskTemplate.ContainerSpec.Secrets}}" | grep -q "\"SecretName\":\"${SECRET_NAME}\""; then
-                SECRET_ARGS="--secret-rm ${SECRET_TARGET} --secret-add source=${SECRET_NAME},target=${SECRET_TARGET}"
+            if docker service ls --format \\"{{.Name}}\\" | grep -w '^${SERVICE}$' >/dev/null; then
+              if docker service inspect ${SERVICE} --format \\"{{json .Spec.TaskTemplate.ContainerSpec.Secrets}}\\" | grep -q '\\"SecretName\\":\\"${SECRET_NAME}\\"'; then
+                SECRET_ARGS=\\"--secret-rm ${SECRET_TARGET} --secret-add source=${SECRET_NAME},target=${SECRET_TARGET}\\"
               else
-                SECRET_ARGS="--secret-add source=${SECRET_NAME},target=${SECRET_TARGET}"
+                SECRET_ARGS=\\"--secret-add source=${SECRET_NAME},target=${SECRET_TARGET}\\"
               fi
 
               docker service update \
@@ -219,12 +217,13 @@ pipeline {
                 --secret source=${SECRET_NAME},target=${SECRET_TARGET} \
                 ${IMAGE_REF}
             fi
-          '
-        """
+          "
+        '''
       }
     }
   }
 }
+
 
   }
 
