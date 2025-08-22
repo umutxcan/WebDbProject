@@ -39,7 +39,7 @@ def get_kubilay():   # buradaki isim değişti
     return "kubilay kaptanoglu"
 
 @app.route('/umut', methods=['GET'])
-def get_kubilay():   # buradaki isim değişti
+def get_umut():   # buradaki isim değişti
     return "proje bitmistir"
 
 
