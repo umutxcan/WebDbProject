@@ -161,49 +161,71 @@ pipeline {
     }
 
     stage('Deploy to Swarm') {
-      steps {
-        sh '''
+  steps {
+    withCredentials([usernamePassword(credentialsId: "${params.CREDS_ID}", usernameVariable: 'HARBOR_USER', passwordVariable: 'HARBOR_PASS')]) {
+      sshagent(credentials: ['swarm-manager-ssh']) {
+        sh """
           set -eu
-          docker network inspect my_overlay  >/dev/null 2>&1 || docker network create --driver overlay my_overlay
+          SSH_HOST=192.168.100.105
+          SSH_USER=ubuntu
 
           SERVICE=flaskapp
           IMAGE_REF="${REGISTRY}/${PROJECT}/${IMAGE_NAME}:${IMAGE_TAG}"
+          SECRET_NAME="${SECRET_NAME}"
+          SECRET_TARGET="${SECRET_TARGET}"
+          DB_HOST="${DB_HOST}"
+          DB_USER="${DB_USER}"
+          DB_NAME="${DB_NAME}"
+          DB_PASS_FILE_PATH="${DB_PASS_FILE_PATH}"
 
-          if docker service ls --format '{{.Name}}' | grep -w "^${SERVICE}$" >/dev/null; then
-            if docker service inspect "$SERVICE" --format '{{json .Spec.TaskTemplate.ContainerSpec.Secrets}}' | grep -q '"SecretName":"'"${SECRET_NAME}"'"'; then
-              SECRET_ARGS="--secret-rm ${SECRET_TARGET} --secret-add source=${SECRET_NAME},target=${SECRET_TARGET}"
+          ssh -o StrictHostKeyChecking=no \${SSH_USER}@\${SSH_HOST} '
+            set -euo pipefail
+
+            # Harbor login (kimlik bilgisini bu CLI üzerinden Swarm'a aktaralım)
+            echo "${HARBOR_PASS}" | docker login "${REGISTRY}" -u "${HARBOR_USER}" --password-stdin
+
+            # Network
+            docker network inspect my_overlay >/dev/null 2>&1 || docker network create --driver overlay my_overlay
+
+            if docker service ls --format "{{.Name}}" | grep -w "^${SERVICE}\$" >/dev/null; then
+              # Secret bagli mi diye var
+              if docker service inspect ${SERVICE} --format "{{json .Spec.TaskTemplate.ContainerSpec.Secrets}}" | grep -q "\"SecretName\":\"${SECRET_NAME}\""; then
+                SECRET_ARGS="--secret-rm ${SECRET_TARGET} --secret-add source=${SECRET_NAME},target=${SECRET_TARGET}"
+              else
+                SECRET_ARGS="--secret-add source=${SECRET_NAME},target=${SECRET_TARGET}"
+              fi
+
+              docker service update \
+                --with-registry-auth \
+                --update-order stop-first \
+                --update-parallelism 1 \
+                --image ${IMAGE_REF} \
+                --env-rm DB_PASS \
+                --env-add DB_HOST=${DB_HOST} \
+                --env-add DB_USER=${DB_USER} \
+                --env-add DB_NAME=${DB_NAME} \
+                --env-add DB_PASS_FILE=${DB_PASS_FILE_PATH} \
+                ${SECRET_ARGS} \
+                ${SERVICE}
             else
-              SECRET_ARGS="--secret-add source=${SECRET_NAME},target=${SECRET_TARGET}"
+              docker service create --name ${SERVICE} --replicas 3 \
+                --publish mode=ingress,target=5000,published=8080 \
+                --network my_overlay \
+                --with-registry-auth \
+                --env DB_HOST=${DB_HOST} \
+                --env DB_USER=${DB_USER} \
+                --env DB_NAME=${DB_NAME} \
+                --env DB_PASS_FILE=${DB_PASS_FILE_PATH} \
+                --secret source=${SECRET_NAME},target=${SECRET_TARGET} \
+                ${IMAGE_REF}
             fi
-
-            docker service update \
-              --with-registry-auth \
-              --rollback-order stop-first \
-              --update-parallelism 1 \
-              --image "${IMAGE_REF}" \
-               --detach \
-              --env-rm DB_PASS \
-              --env-add DB_HOST="${DB_HOST}" \
-              --env-add DB_USER="${DB_USER}" \
-              --env-add DB_NAME="${DB_NAME}" \
-              --env-add DB_PASS_FILE="${DB_PASS_FILE_PATH}" \
-              ${SECRET_ARGS} \
-              "${SERVICE}"
-          else
-            docker service create --name "${SERVICE}" --replicas 3 \
-              --publish mode=ingress,target=5000,published=8080 \
-              --network my_overlay \
-              --with-registry-auth \
-              --env DB_HOST="${DB_HOST}" \
-              --env DB_USER="${DB_USER}" \
-              --env DB_NAME="${DB_NAME}" \
-              --env DB_PASS_FILE="${DB_PASS_FILE_PATH}" \
-              --secret source=${SECRET_NAME},target=${SECRET_TARGET} \
-              "${IMAGE_REF}"
-          fi
-        '''
+          '
+        """
       }
     }
+  }
+}
+
   }
 
   post {
